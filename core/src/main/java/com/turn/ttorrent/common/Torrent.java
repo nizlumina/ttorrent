@@ -19,6 +19,10 @@ import com.turn.ttorrent.bcodec.BDecoder;
 import com.turn.ttorrent.bcodec.BEValue;
 import com.turn.ttorrent.bcodec.BEncoder;
 
+import org.apache.commons.io.FileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -31,6 +35,7 @@ import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -46,12 +51,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-
-import org.apache.commons.codec.binary.Hex;
-import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.io.FileUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A torrent file tracked by the controller's BitTorrent tracker.
@@ -404,9 +403,18 @@ public class Torrent {
 		output.write(this.getEncoded());
 	}
 
+
 	public static byte[] hash(byte[] data) {
-		return DigestUtils.sha1(data);
-	}
+        try
+        {
+            return MessageDigest.getInstance("SHA-1").digest(data);
+        }
+        catch (NoSuchAlgorithmException e)
+        {
+            e.printStackTrace();
+            return new byte[0];
+        }
+    }
 
 	/**
 	 * Convert a byte string to a string containing an hexadecimal
@@ -415,7 +423,15 @@ public class Torrent {
 	 * @param bytes The byte array to convert.
 	 */
 	public static String byteArrayToHexString(byte[] bytes) {
-		return new String(Hex.encodeHex(bytes, false));
+        final char[] toDigits = "0123456789abcdef".toCharArray();
+        int l = bytes.length;
+        char[] out = new char[l << 1];
+
+        int i = 0; for (int j = 0; i < l; ++i) {
+            out[(j++)] = toDigits[((0xF0 & bytes[i]) >>> 4)];
+            out[(j++)] = toDigits[(0xF & bytes[i])];
+        }
+        return new String(out);
 	}
 
 	/**
@@ -684,9 +700,23 @@ public class Torrent {
 		private final ByteBuffer data;
 
 		CallableChunkHasher(ByteBuffer buffer) {
-			this.md = DigestUtils.getSha1Digest();
 
-			this.data = ByteBuffer.allocate(buffer.remaining());
+            MessageDigest digest = null;
+            try
+            {
+                digest = MessageDigest.getInstance("SHA-1");
+            }
+            catch (NoSuchAlgorithmException e1)
+            {
+                e1.printStackTrace();
+            }
+            if(digest != null){
+
+                this.md = digest;
+            }
+            else this.md = null;
+
+            this.data = ByteBuffer.allocate(buffer.remaining());
 			buffer.mark();
 			this.data.put(buffer);
 			this.data.clear();
@@ -718,7 +748,7 @@ public class Torrent {
 	 */
 	private static String hashFile(File file, int pieceLenght)
 		throws InterruptedException, IOException {
-		return Torrent.hashFiles(Arrays.asList(new File[] { file }), pieceLenght);
+		return Torrent.hashFiles(Arrays.asList(file), pieceLenght);
 	}
 
 	private static String hashFiles(List<File> files, int pieceLenght)
